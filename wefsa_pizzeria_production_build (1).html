@@ -1,0 +1,1693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Wefsa Pizzeria — Late Night Artisanal Kitchen</title>
+  
+  <!-- Favicon & Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React 18 & Babel Standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"Space Grotesk"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              amber: '#f59e0b',
+              amberHover: '#d97706',
+              dark: '#09090b',
+              card: '#111216',
+              border: '#27272a',
+              muted: '#71717a'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #09090b;
+      color: #f4f4f5;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #09090b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #27272a;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3f3f46;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .animate-modal-in {
+      animation: fadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  </style>
+</head>
+<body class="bg-[#09090b] text-zinc-100 antialiased selection:bg-amber-500 selection:text-black">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // --- STORE CONFIGURATION ---
+    const STORE_CONFIG = {
+      name: "Wefsa Pizzeria",
+      tagline: "Late Night Artisanal Pizzeria & Fast Casual Kitchen",
+      phoneDisplay: "+91 62838-37270",
+      whatsappNumber: "916283837270",
+      hours: "05:00 P.M. TO 04:00 A.M.",
+      location: "Opposite Wine Shop, Near T-Point, Lawgate",
+      currency: "₹",
+    };
+
+    // Geographic references for intelligent zone classification
+    const LAWGATE_COORDS = { lat: 31.2545, lng: 75.7040 };
+    const AGI_COORDS = { lat: 31.2825, lng: 75.6265 };
+
+    // Haversine formula to compute geodesic distance in kilometers
+    function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371; // Earth radius in km
+      const dLat = (lat2 - lat1) * (Math.PI / 180);
+      const dLon = (lon2 - lon1) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) *
+          Math.cos(lat2 * (Math.PI / 180)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // --- DELIVERY ZONES & FEE RULES ---
+    const DELIVERY_ZONES = [
+      {
+        id: "lawgate",
+        name: "Lawgate & Greenvalley",
+        tag: "Base Radius",
+        badge: "Free > ₹100",
+        description: "FREE delivery for orders above ₹100 (₹25 delivery fee below ₹100)",
+        freeThreshold: 100,
+        belowThresholdFee: 25,
+        flatFee: null,
+      },
+      {
+        id: "outside",
+        name: "Outside Lawgate & Greenvalley",
+        tag: "Extended Zone",
+        badge: "Free ≥ ₹400",
+        description: "FREE delivery for orders ₹400 and above (₹30 fee below ₹400)",
+        freeThreshold: 400,
+        belowThresholdFee: 30,
+        flatFee: null,
+      },
+      {
+        id: "agi",
+        name: "AGI (Smart Homes / Infra / Sky Villas)",
+        tag: "AGI Sector",
+        badge: "Flat ₹100",
+        description: "Standard delivery fee of ₹100 applied to all orders",
+        freeThreshold: null,
+        belowThresholdFee: null,
+        flatFee: 100,
+      },
+    ];
+
+    const CHEESE_BURST_MIN_PRICE = 230;
+
+    const getExtraCheesePriceForSize = (size) => {
+      if (size === "L") return 120;
+      if (size === "M") return 90;
+      return 60; // Regular (R)
+    };
+
+    const PIZZA_CRUST_OPTIONS = [
+      { id: "standard", name: "Classic Hand-Tossed", price: 0, description: "Authentic thin-medium crust baked with house seasoning" },
+      { id: "cheese_burst", name: "Cheese Burst", price: 100, description: "Molten liquid cheese core (requires pizza ₹230+)" },
+      { id: "extra_cheese_burst", name: "Extra Cheese with Burst", price: 150, description: "Double mozzarella layer + molten liquid core (requires ₹230+)" },
+    ];
+
+    const GENERAL_ADDONS = [
+      { id: "dip", name: "Signature Garlic Mayo Dip", price: 20 },
+      { id: "jalapenos", name: "Extra Mexican Jalapenos", price: 25 },
+      { id: "herb_packet", name: "Extra Oregano & Chili Flakes", price: 0 },
+    ];
+
+    const MENU_ITEMS = [
+      // --- MR. MANIA (7" Single Topping Pizzas) ---
+      { id: "mm-1", name: "Onion Pizza", category: "mr_mania", type: "veg", isStar: false, isMustTry: false, description: "Crunchy crisp sliced onions on seasoned tomato herb base & melted mozzarella", prices: { default: 90 }, isPizza: false },
+      { id: "mm-2", name: "Capsicum Pizza", category: "mr_mania", type: "veg", isStar: false, isMustTry: false, description: "Fresh green bell peppers roasted to perfection on melted mozzarella", prices: { default: 90 }, isPizza: false },
+      { id: "mm-3", name: "Tomato Pizza", category: "mr_mania", type: "veg", isStar: false, isMustTry: false, description: "Juicy ripe red tomatoes baked with classic pizza sauce and cheese", prices: { default: 90 }, isPizza: false },
+      { id: "mm-4", name: "Corn Pizza", category: "mr_mania", type: "veg", isStar: true, isMustTry: false, description: "Sweet American golden corn kernels showered over hot gooey cheese", prices: { default: 90 }, isPizza: false },
+
+      // --- VEG PIZZAS (R / M / L) ---
+      { id: "vp-1", name: "Margarita", category: "veg_pizza", type: "veg", isStar: true, isMustTry: false, description: "Classic Italian mozzarella cheese pizza with artisanal herb tomato sauce", prices: { R: 100, M: 160, L: 230 }, isPizza: true },
+      { id: "vp-2", name: "Onion Classic", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Generous sweet red onions layered with signature spices and cheese", prices: { R: 110, M: 170, L: 240 }, isPizza: true },
+      { id: "vp-3", name: "Capsicum Crunch", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Garden fresh green capsicum with aromatic herbs and melted cheese", prices: { R: 110, M: 170, L: 240 }, isPizza: true },
+      { id: "vp-4", name: "Tomato Delight", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Sweet slow-cooked tomato slices on bubbly cheese base", prices: { R: 110, M: 170, L: 240 }, isPizza: true },
+      { id: "vp-5", name: "Onion Capsicum", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Classic duo of crunchy onions and aromatic green capsicum", prices: { R: 120, M: 180, L: 250 }, isPizza: true },
+      { id: "vp-6", name: "Corn Jalapeno", category: "veg_pizza", type: "veg", isStar: false, isMustTry: true, description: "Sweet golden corn paired with fiery pickled Mexican jalapenos", prices: { R: 120, M: 180, L: 250 }, isPizza: true },
+      { id: "vp-7", name: "Corn 'N' Capsicum", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Crispy green bell peppers and juicy golden corn over cheese", prices: { R: 130, M: 190, L: 260 }, isPizza: true },
+      { id: "vp-8", name: "Spicy Spark", category: "veg_pizza", type: "veg", isStar: false, isMustTry: true, description: "Jalapeno + Paprika + Onion. Spicy kick of fiery peppers and crisp onions", prices: { R: 130, M: 190, L: 260 }, isPizza: true },
+      { id: "vp-9", name: "Paneer Capsicum", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Soft marinated paneer cubes and crunchy capsicum on seasoned crust", prices: { R: 140, M: 210, L: 280 }, isPizza: true },
+      { id: "vp-10", name: "Mushroom 'N' Onion", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Mushroom + Onion. Tender sliced button mushrooms paired with red onions", prices: { R: 140, M: 210, L: 280 }, isPizza: true },
+      { id: "vp-11", name: "Paneer Onion", category: "veg_pizza", type: "veg", isStar: true, isMustTry: false, description: "Paneer + Onion + Olives. Tender fresh paneer, crisp onion, and black olives", prices: { R: 140, M: 210, L: 280 }, isPizza: true },
+      { id: "vp-12", name: "Cheese 'N' Corn", category: "veg_pizza", type: "veg", isStar: false, isMustTry: true, description: "Paneer + Corn. Rich creamy paneer cubes loaded with sweet corn kernels", prices: { R: 150, M: 220, L: 300 }, isPizza: true },
+      { id: "vp-13", name: "Farm House", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Mushroom + Onion + Capsicum + Tomato. Traditional countryside loaded harvest", prices: { R: 160, M: 230, L: 320 }, isPizza: true },
+      { id: "vp-14", name: "Paneer Tikka", category: "veg_pizza", type: "veg", isStar: true, isMustTry: false, description: "Paneer Tikka + Onion + Capsicum + Tandoori Sauce + Paprika. Desi tandoori fire", prices: { R: 180, M: 240, L: 340 }, isPizza: true },
+      { id: "vp-15", name: "Paneer Makhni", category: "veg_pizza", type: "veg", isStar: true, isMustTry: false, description: "Paneer Makhni + Onion + Capsicum + Olives. Rich buttery royal makhni sauce", prices: { R: 180, M: 240, L: 340 }, isPizza: true },
+      { id: "vp-16", name: "Veg Deluxe", category: "veg_pizza", type: "veg", isStar: false, isMustTry: false, description: "Paneer + Mushroom + Onion + Capsicum + Corn. The ultimate vegetarian feast", prices: { R: 200, M: 250, L: 360 }, isPizza: true },
+      { id: "vp-17", name: "Veg Forest", category: "veg_pizza", type: "veg", isStar: true, isMustTry: false, description: "Paneer + Mushroom + Onion + Capsicum + Corn + Tomato + Olives + Paprika + Jalapeno", prices: { R: 210, M: 260, L: 370 }, isPizza: true },
+
+      // --- NON-VEG PIZZAS (R / M / L) ---
+      { id: "nvp-1", name: "Classic Chicken", category: "nonveg_pizza", type: "non-veg", isStar: true, isMustTry: false, description: "Juicy diced herb chicken chunks loaded over bubbly melted cheese", prices: { R: 160, M: 230, L: 320 }, isPizza: true },
+      { id: "nvp-2", name: "Peri - Peri Chicken", category: "nonveg_pizza", type: "non-veg", isStar: true, isMustTry: false, description: "Zesty spicy peri-peri spiced marinated chicken loaded with melted mozzarella", prices: { R: 170, M: 250, L: 340 }, isPizza: true },
+      { id: "nvp-3", name: "Masala Chicken", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Tender chicken cooked in rich Indian tawa masala spice blend", prices: { R: 170, M: 250, L: 340 }, isPizza: true },
+      { id: "nvp-4", name: "Creamy Chicken", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Velvety malai infused chicken chunks baked over mozzarella sauce", prices: { R: 170, M: 250, L: 340 }, isPizza: true },
+      { id: "nvp-5", name: "Chicken Golden Delight", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "BBQ Chicken + Corn + Onion. Smoky sweet barbecue sauce with golden corn", prices: { R: 180, M: 270, L: 360 }, isPizza: true },
+      { id: "nvp-6", name: "Pepper BBQ Mushrooms", category: "nonveg_pizza", type: "non-veg", isStar: true, isMustTry: false, description: "BBQ Chicken + Mushrooms + Onion + Capsicum + Paprika. Bold barbecue fusion", prices: { R: 180, M: 270, L: 360 }, isPizza: true },
+      { id: "nvp-7", name: "Chicken Alfredo", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Masala Chicken + Spicy Chicken + Onion + Paprika. Creamy and spicy blend", prices: { R: 190, M: 280, L: 370 }, isPizza: true },
+      { id: "nvp-8", name: "Spicy 'N' Schezwan", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Spicy Chicken + Chicken with Schezwan + Onion + Jalapeno. High-voltage wok heat", prices: { R: 190, M: 280, L: 370 }, isPizza: true },
+      { id: "nvp-9", name: "Chicken Tikka", category: "nonveg_pizza", type: "non-veg", isStar: true, isMustTry: false, description: "Tandoori Chicken + Peri Peri Chicken + Tandoori Sauce + Onion + Capsicum", prices: { R: 190, M: 280, L: 370 }, isPizza: true },
+      { id: "nvp-10", name: "Chicken Fiesta", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Grilled Chicken + Peri Peri Chicken + Onion + Capsicum + Olives", prices: { R: 200, M: 290, L: 390 }, isPizza: true },
+      { id: "nvp-11", name: "Chicken Sausage & Pepperoni", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Chicken Sausage + Chicken Pepperoni + Onion + Capsicum + Paprika", prices: { R: 200, M: 290, L: 390 }, isPizza: true },
+      { id: "nvp-12", name: "Non Veg Supreme", category: "nonveg_pizza", type: "non-veg", isStar: false, isMustTry: false, description: "Onion + Pepper BBQ Chicken + Masala Chicken + Peri Peri Chicken + Olives", prices: { R: 210, M: 300, L: 400 }, isPizza: true },
+      { id: "nvp-13", name: "Chicken Chak De Fatte", category: "nonveg_pizza", type: "non-veg", isStar: true, isMustTry: false, description: "Creamy Chicken + Tikka Chicken + Masala Chicken + Seekh Kabab + Onion + Olives", prices: { R: 210, M: 300, L: 400 }, isPizza: true },
+
+      // --- BURGERS ---
+      { id: "bg-1", name: "Veg Burger", category: "burgers", type: "veg", isStar: true, isMustTry: false, description: "Crispy herb potato patty, fresh tomato, onion & creamy secret burger spread", prices: { default: 50 }, isPizza: false },
+      { id: "bg-2", name: "Cream Burger", category: "burgers", type: "veg", isStar: true, isMustTry: false, description: "Extra luscious creamy dressing drizzled on golden patty with fresh veggies", prices: { default: 60 }, isPizza: false },
+      { id: "bg-3", name: "Double Tikki Burger", category: "burgers", type: "veg", isStar: true, isMustTry: false, description: "Two crispy golden veg patties stacked with double sauce & crunchy veggies", prices: { default: 80 }, isPizza: false },
+      { id: "bg-4", name: "Egg Burger", category: "burgers", type: "egg", isStar: false, isMustTry: false, description: "Fluffy spiced egg patty toasted bun with crunchy sliced onions and mayo", prices: { default: 80 }, isPizza: false },
+      { id: "bg-5", name: "Paneer Burger", category: "burgers", type: "veg", isStar: false, isMustTry: false, description: "Soft fresh cottage cheese slice tossed in mild spices with zesty toppings", prices: { default: 90 }, isPizza: false },
+      { id: "bg-6", name: "Paneer Patty Burger", category: "burgers", type: "veg", isStar: true, isMustTry: false, description: "Crispy breaded golden paneer patty with spicy mayo and lettuce", prices: { default: 100 }, isPizza: false },
+      { id: "bg-7", name: "Chicken Patty Burger", category: "burgers", type: "non-veg", isStar: false, isMustTry: false, description: "Juicy golden fried chicken patty seasoned with aromatic garlic pepper", prices: { default: 100 }, isPizza: false },
+
+      // --- BIG BITES BURGER ---
+      { id: "bbb-1", name: "Veg Maharaja", category: "burgers", type: "veg", isStar: true, isMustTry: false, description: "Towering double patty feast packed with cheese, sauces, and loaded salad", prices: { default: 100 }, isPizza: false },
+      { id: "bbb-2", name: "Egg Burger (Big Bite)", category: "burgers", type: "egg", isStar: false, isMustTry: false, description: "Large sesame bun with double seasoned egg omelette patty & house dressing", prices: { default: 100 }, isPizza: false },
+      { id: "bbb-3", name: "Chicken Burger", category: "burgers", type: "non-veg", isStar: true, isMustTry: false, description: "Hefty seasoned chicken breast fillet topped with creamy garlic mayo", prices: { default: 130 }, isPizza: false },
+      { id: "bbb-4", name: "Maharaja Double Tikki Burger", category: "burgers", type: "veg", isStar: false, isMustTry: false, description: "Supreme jumbo burger loaded with 2 jumbo patties, spicy sauce & cheese", prices: { default: 130 }, isPizza: false },
+      { id: "bbb-5", name: "Crunchy Chicken Burger", category: "burgers", type: "non-veg", isStar: true, isMustTry: false, description: "Extra crispy buttermilk battered golden fried chicken fillet", prices: { default: 150 }, isPizza: false },
+      { id: "bbb-6", name: "Chicken Pepperoni Burger", category: "burgers", type: "non-veg", isStar: false, isMustTry: true, description: "Juicy chicken patty crowned with smoky chicken pepperoni slices and melted cheese", prices: { default: 160 }, isPizza: false },
+
+      // --- SANDWICHES ---
+      { id: "sw-1", name: "Veg Sandwich", category: "sandwiches", type: "veg", isStar: true, isMustTry: false, description: "Crispy grilled bread packed with fresh cucumber, tomato, onion and mint mayo", prices: { default: 70 }, isPizza: false },
+      { id: "sw-2", name: "Aloo Tikki Sandwich", category: "sandwiches", type: "veg", isStar: true, isMustTry: false, description: "Spiced crispy aloo tikki pressed inside golden butter-toasted bread", prices: { default: 80 }, isPizza: false },
+      { id: "sw-3", name: "Corn Sandwich", category: "sandwiches", type: "veg", isStar: false, isMustTry: false, description: "Juicy sweet corn mixed with herbs and melted cheese filling", prices: { default: 80 }, isPizza: false },
+      { id: "sw-4", name: "Creamy Cheese Sandwich", category: "sandwiches", type: "veg", isStar: true, isMustTry: false, description: "Double loaded creamy melted cheese blend with mild Italian seasoning", prices: { default: 90 }, isPizza: false },
+      { id: "sw-5", name: "Farm Fresh Sandwich", category: "sandwiches", type: "veg", isStar: false, isMustTry: true, description: "Farm fresh veggies, corn, capsicum and herbs grilled to golden crisp", prices: { default: 90 }, isPizza: false },
+      { id: "sw-6", name: "Egg Omelette Sandwich", category: "sandwiches", type: "egg", isStar: false, isMustTry: false, description: "Fluffy masala egg omelette grilled between golden buttered bread", prices: { default: 90 }, isPizza: false },
+      { id: "sw-7", name: "Cheese 'N' Corn Sandwich", category: "sandwiches", type: "veg", isStar: true, isMustTry: false, description: "Sweet golden corn showered in hot molten cheese", prices: { default: 100 }, isPizza: false },
+      { id: "sw-8", name: "Paneer Sandwich", category: "sandwiches", type: "veg", isStar: false, isMustTry: true, description: "Diced tender paneer tossed in zesty spices, onions, and garlic sauce", prices: { default: 100 }, isPizza: false },
+      { id: "sw-9", name: "Masala Chicken Sandwich", category: "sandwiches", type: "non-veg", isStar: true, isMustTry: false, description: "Juicy shredded chicken cooked in aromatic Indian spices grilled hot", prices: { default: 110 }, isPizza: false },
+      { id: "sw-10", name: "Paneer Makhani Sandwich", category: "sandwiches", type: "veg", isStar: false, isMustTry: false, description: "Rich Punjabi makhani gravy-infused paneer slices in crusty bread", prices: { default: 110 }, isPizza: false },
+      { id: "sw-11", name: "BBQ Chicken Sandwich", category: "sandwiches", type: "non-veg", isStar: false, isMustTry: false, description: "Smoky sweet glazed BBQ chicken pieces, sliced onions and cheese", prices: { default: 130 }, isPizza: false },
+      { id: "sw-12", name: "Chicken Pepperoni Sandwich", category: "sandwiches", type: "non-veg", isStar: false, isMustTry: false, description: "Savory chicken pepperoni slices layered with Italian seasonings and cheese", prices: { default: 140 }, isPizza: false },
+
+      // --- TORTILLA WRAPS ---
+      { id: "tw-1", name: "Classic Veggie Wrap", category: "wraps", type: "veg", isStar: true, isMustTry: false, description: "Soft tortilla rolled with garden crisp veggies, creamy sauce and seasonings", prices: { default: 70 }, isPizza: false },
+      { id: "tw-2", name: "Aloo Tikki Wrap", category: "wraps", type: "veg", isStar: true, isMustTry: false, description: "Crunchy potato cutlet, chopped onions, mint mayo rolled in warm flatbread", prices: { default: 80 }, isPizza: false },
+      { id: "tw-3", name: "Egg Wrap", category: "wraps", type: "egg", isStar: false, isMustTry: false, description: "Fluffy spiced egg roll wrapped with sliced onions and tangy house sauce", prices: { default: 90 }, isPizza: false },
+      { id: "tw-4", name: "Mushroom Wrap", category: "wraps", type: "veg", isStar: false, isMustTry: false, description: "Sauteed garlic button mushrooms with fresh herbs and molten sauce", prices: { default: 100 }, isPizza: false },
+      { id: "tw-5", name: "Paneer Wrap", category: "wraps", type: "veg", isStar: false, isMustTry: false, description: "Fresh tender paneer batons tossed in herb seasoning and crunchy veggies", prices: { default: 110 }, isPizza: false },
+      { id: "tw-6", name: "Paneer Tikka Wrap", category: "wraps", type: "veg", isStar: true, isMustTry: false, description: "Char-grilled tandoori paneer tikka, spicy tandoori mayo and bell peppers", prices: { default: 120 }, isPizza: false },
+      { id: "tw-7", name: "Chicken Tikka Wrap", category: "wraps", type: "non-veg", isStar: true, isMustTry: false, description: "Smoky tandoori chicken chunks tossed with crisp onions and spicy mint sauce", prices: { default: 130 }, isPizza: false },
+      { id: "tw-8", name: "Chicken Keema Wrap", category: "wraps", type: "non-veg", isStar: false, isMustTry: false, description: "Savory slow-cooked spiced minced chicken rolled inside a soft tortilla", prices: { default: 130 }, isPizza: false },
+      { id: "tw-9", name: "Fully Loaded Wrap", category: "wraps", type: "non-veg", isStar: false, isMustTry: false, description: "Loaded combination of chicken, sausages, melted cheese and secret sauces", prices: { default: 130 }, isPizza: false },
+      { id: "tw-10", name: "Paneer Makhani Wrap", category: "wraps", type: "veg", isStar: false, isMustTry: false, description: "Rich butter makhani cottage cheese wrapped with crunchy capsicum", prices: { default: 130 }, isPizza: false },
+      { id: "tw-11", name: "Chicken Masala Wrap", category: "wraps", type: "non-veg", isStar: false, isMustTry: false, description: "Spicy Indian street style masala chicken wrapped and grilled hot", prices: { default: 140 }, isPizza: false },
+
+      // --- GARLIC BREAD & STUFFED GARLIC BREAD ---
+      { id: "gb-1", name: "Classic Garlic Bread", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Warm artisan bread brushed with rich garlic herb butter and baked golden", prices: { default: 70 }, isPizza: false },
+      { id: "gb-2", name: "Corn Garlic Bread", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Toasted garlic bread loaded with sweet golden corn and Italian seasonings", prices: { default: 80 }, isPizza: false },
+      { id: "gb-3", name: "Mushroom Garlic Bread", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Earth-roasted button mushrooms over aromatic garlic butter toasted bread", prices: { default: 90 }, isPizza: false },
+      { id: "gb-4", name: "Chicken Garlic Bread", category: "garlic_bread", type: "non-veg", isStar: true, isMustTry: false, description: "Juicy seasoned chicken bits baked over crisp golden garlic bread", prices: { default: 110 }, isPizza: false },
+      { id: "sgb-1", name: "Calzon Veg", category: "garlic_bread", type: "veg", isStar: true, isMustTry: false, description: "Italian folded pocket stuffed with mozzarella, vegetables, and herb sauce", prices: { default: 110 }, isPizza: false },
+      { id: "sgb-2", name: "Corn 'N' Mushroom Stuffed", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Crispy crust stuffed to the brim with sweet corn, sauteed mushroom & cheese", prices: { default: 130 }, isPizza: false },
+      { id: "sgb-3", name: "Paneer 'N' Corn Stuffed", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Molten cheese with diced soft paneer and crunchy sweet golden corn", prices: { default: 150 }, isPizza: false },
+      { id: "sgb-4", name: "Peri-Peri Chicken Stuffed", category: "garlic_bread", type: "non-veg", isStar: false, isMustTry: true, description: "Spicy peri-peri marinated chicken stuffed with overflowing gooey mozzarella", prices: { default: 150 }, isPizza: false },
+      { id: "sgb-5", name: "Paneer Makhani Stuffed", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "Rich Punjabi makhani sauce and fresh paneer sealed in cheesy garlic crust", prices: { default: 150 }, isPizza: false },
+      { id: "sgb-6", name: "Cheese Garlic Bread Stuffed", category: "garlic_bread", type: "veg", isStar: false, isMustTry: false, description: "The ultimate cheese bomb stuffed with a thick layer of gooey mozzarella", prices: { default: 150 }, isPizza: false },
+
+      // --- APPETIZERS & FRIES ---
+      { id: "ap-1", name: "Boiled Eggs (5pcs)", category: "appetizers", type: "egg", isStar: false, isMustTry: false, description: "5 farm fresh hard-boiled eggs served with black pepper and chaat masala", prices: { default: 80 }, isPizza: false },
+      { id: "ap-2", name: "Chicken Nuggets (8pcs)", category: "appetizers", type: "non-veg", isStar: true, isMustTry: false, description: "8 pieces of golden crispy battered tender minced chicken bites", prices: { default: 160 }, isPizza: false },
+      { id: "ap-3", name: "Chicken Popcorn", category: "appetizers", type: "non-veg", isStar: true, isMustTry: false, description: "Crunchy bite-sized seasoned chicken popcorn fried until golden brown", prices: { default: 180 }, isPizza: false },
+      { id: "ap-4", name: "Chicken Strips", category: "appetizers", type: "non-veg", isStar: true, isMustTry: false, description: "Long tender whole chicken breast strips in a crunchy seasoned crumb coat", prices: { default: 180 }, isPizza: false },
+      { id: "ap-5", name: "Chicken Wings", category: "appetizers", type: "non-veg", isStar: true, isMustTry: false, description: "Crispy tossed chicken wings infused with spicy garlic pepper seasonings", prices: { default: 180 }, isPizza: false },
+      { id: "ap-6", name: "Fried Chicken", category: "appetizers", type: "non-veg", isStar: true, isMustTry: false, description: "Deep fried southern style crispy chicken pieces, crackling crust outside", prices: { default: 220 }, isPizza: false },
+      { id: "fr-1", name: "Plain Fries", category: "appetizers", type: "veg", isStar: false, isMustTry: false, description: "Golden crispy fried potato batons served hot", prices: { default: 70 }, isPizza: false },
+      { id: "fr-2", name: "Salted Fries", category: "appetizers", type: "veg", isStar: false, isMustTry: false, description: "Classic salted crispy potato french fries", prices: { default: 80 }, isPizza: false },
+      { id: "fr-3", name: "Peri-Peri Fries", category: "appetizers", type: "veg", isStar: true, isMustTry: false, description: "Tossed in fiery African peri-peri chili powder and tangy herbs", prices: { default: 90 }, isPizza: false },
+      { id: "fr-4", name: "Masala Fries", category: "appetizers", type: "veg", isStar: true, isMustTry: false, description: "Zesty Indian chaat and tandoori spices sprinkled over hot fries", prices: { default: 90 }, isPizza: false },
+      { id: "fr-5", name: "Cheesy Fries", category: "appetizers", type: "veg", isStar: false, isMustTry: true, description: "Crispy fries smothered in hot velvety molten cheese sauce and herbs", prices: { default: 110 }, isPizza: false },
+
+      // --- SHAKES & DRINKS ---
+      { id: "sh-1", name: "Chocolate Shake", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Rich blended chocolate shake topped with cocoa and chocolate syrup", prices: { default: 70 }, isPizza: false },
+      { id: "sh-2", name: "Cold Coffee", category: "beverages", type: "veg", isStar: true, isMustTry: false, description: "Chilled thick blended coffee with creamy milk froth and chocolate drizzle", prices: { default: 70 }, isPizza: false },
+      { id: "sh-3", name: "Mango Shake", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Sweet tropical Alphonso mango blended thick with creamy milk", prices: { default: 70 }, isPizza: false },
+      { id: "sh-4", name: "Strawberry Shake", category: "beverages", type: "veg", isStar: true, isMustTry: false, description: "Refreshing sweet strawberry puree blended to frosty perfection", prices: { default: 70 }, isPizza: false },
+      { id: "sh-5", name: "Butterscotch Shake", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Creamy butterscotch crunch and caramel notes in chilled thick shake", prices: { default: 70 }, isPizza: false },
+      { id: "sh-6", name: "Black Current Shake", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Tangy sweet blackcurrant berry milkshake with rich purple hue", prices: { default: 70 }, isPizza: false },
+      { id: "sh-7", name: "Oreo Shake", category: "beverages", type: "veg", isStar: true, isMustTry: false, description: "Crushed crunchy Oreo cookies blitzed with thick vanilla cream", prices: { default: 80 }, isPizza: false },
+      { id: "sh-8", name: "Kitkat Shake", category: "beverages", type: "veg", isStar: true, isMustTry: false, description: "Crisp KitKat chocolate wafers blended thick with creamy chocolate milk", prices: { default: 90 }, isPizza: false },
+      { id: "sh-9", name: "Brownie Shake", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Whole fudge brownie churned into a rich decadently thick chocolate shake", prices: { default: 90 }, isPizza: false },
+      { id: "dr-1", name: "Moon Night", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Wefsa signature specialty refresher with blue curacao, lime and fizz", prices: { default: 70 }, isPizza: false },
+      { id: "dr-2", name: "Virgin Mojito", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Crushed fresh mint leaves, zesty lemon wedges, sugar syrup and sparkling soda", prices: { default: 70 }, isPizza: false },
+      { id: "dr-3", name: "Watermelon Mojito", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Chilled sweet watermelon syrup muddled with mint, lemon and fizz", prices: { default: 70 }, isPizza: false },
+      { id: "dr-4", name: "Green Apple", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Crisp and tart green apple cooler with bubbly effervescence", prices: { default: 70 }, isPizza: false },
+      { id: "dr-5", name: "Cola Blast", category: "beverages", type: "veg", isStar: false, isMustTry: false, description: "Chilled spiced cola blended with lemon and crushed ice rock salt", prices: { default: 80 }, isPizza: false },
+
+      // --- DESSERTS ---
+      { id: "ds-1", name: "Chocolate Brownie", category: "desserts", type: "veg", isStar: false, isMustTry: false, description: "Warm fudgy dark chocolate brownie baked to gooey perfection", prices: { default: 60 }, isPizza: false },
+      { id: "ds-2", name: "Oreo Brownie", category: "desserts", type: "veg", isStar: false, isMustTry: false, description: "Decadent chocolate brownie layered with crunchy baked Oreo cookies", prices: { default: 70 }, isPizza: false },
+      { id: "ds-3", name: "Kitkat Brownie", category: "desserts", type: "veg", isStar: false, isMustTry: false, description: "Gooey chocolate brownie topped with crunchy KitKat wafer chunks", prices: { default: 80 }, isPizza: false },
+    ];
+
+    const CATEGORIES = [
+      { id: "all", label: "Full Menu" },
+      { id: "veg_pizza", label: "Veg Pizzas" },
+      { id: "nonveg_pizza", label: "Non-Veg Pizzas" },
+      { id: "mr_mania", label: "Mr. Mania (₹90)" },
+      { id: "burgers", label: "Burgers & Big Bites" },
+      { id: "sandwiches", label: "Sandwiches" },
+      { id: "wraps", label: "Tortilla Wraps" },
+      { id: "garlic_bread", label: "Garlic Breads" },
+      { id: "appetizers", label: "Appetizers & Fries" },
+      { id: "beverages", label: "Shakes & Drinks" },
+      { id: "desserts", label: "Desserts" },
+    ];
+
+    function DietaryBadge({ type }) {
+      if (type === "veg") {
+        return (
+          <span className="w-3.5 h-3.5 border border-emerald-600 rounded-[2px] flex items-center justify-center p-[2px] bg-emerald-950/20" title="Pure Veg">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+          </span>
+        );
+      }
+      if (type === "egg") {
+        return (
+          <span className="w-3.5 h-3.5 border border-amber-600 rounded-[2px] flex items-center justify-center p-[2px] bg-amber-950/20" title="Contains Egg">
+            <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+          </span>
+        );
+      }
+      return (
+        <span className="w-3.5 h-3.5 border border-rose-600 rounded-[2px] flex items-center justify-center p-[2px] bg-rose-950/20" title="Non-Veg">
+          <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
+        </span>
+      );
+    }
+
+    function App() {
+      const [selectedCategory, setSelectedCategory] = useState("all");
+      const [dietFilter, setDietFilter] = useState("all");
+      const [searchQuery, setSearchQuery] = useState("");
+      
+      const [cart, setCart] = useState([]);
+      const [isCartOpen, setIsCartOpen] = useState(false);
+      const [customizingItem, setCustomizingItem] = useState(null);
+      
+      const [orderType, setOrderType] = useState("delivery");
+      const [customerName, setCustomerName] = useState("");
+      const [customerPhone, setCustomerPhone] = useState("");
+      const [deliveryAddress, setDeliveryAddress] = useState("");
+      const [landmark, setLandmark] = useState("");
+      const [deliveryZone, setDeliveryZone] = useState("lawgate");
+      const [gpsCoords, setGpsCoords] = useState(null);
+      const [googleMapsUrl, setGoogleMapsUrl] = useState(null);
+      const [specialInstructions, setSpecialInstructions] = useState("");
+      const [formErrors, setFormErrors] = useState({});
+
+      const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+      const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+      const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+      const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+      const [toastMessage, setToastMessage] = useState(null);
+
+      const [orderHistory, setOrderHistory] = useState([]);
+      const [feedbackRating, setFeedbackRating] = useState(5);
+      const [feedbackCategory, setFeedbackCategory] = useState("Taste & Quality");
+      const [feedbackComment, setFeedbackComment] = useState("");
+      const [feedbacksList, setFeedbacksList] = useState([]);
+      const [userId, setUserId] = useState(() => "user_" + Math.random().toString(36).substring(2, 9));
+
+      useEffect(() => {
+        try {
+          const savedProfile = localStorage.getItem("wefsa_profile");
+          if (savedProfile) {
+            const parsed = JSON.parse(savedProfile);
+            if (parsed.name) setCustomerName(parsed.name);
+            if (parsed.phone) setCustomerPhone(parsed.phone);
+            if (parsed.address) setDeliveryAddress(parsed.address);
+            if (parsed.landmark) setLandmark(parsed.landmark);
+            if (parsed.zone) setDeliveryZone(parsed.zone);
+            if (parsed.coords) setGpsCoords(parsed.coords);
+            if (parsed.mapsUrl) setGoogleMapsUrl(parsed.mapsUrl);
+            if (parsed.userId) setUserId(parsed.userId);
+          }
+
+          const savedHistory = localStorage.getItem("wefsa_order_history");
+          if (savedHistory) setOrderHistory(JSON.parse(savedHistory));
+
+          const savedFeedbacks = localStorage.getItem("wefsa_feedbacks");
+          if (savedFeedbacks) setFeedbacksList(JSON.parse(savedFeedbacks));
+        } catch (e) {
+          console.warn("Local cache read error", e);
+        }
+      }, []);
+
+      const saveProfileLocally = (overrides = {}) => {
+        try {
+          const profile = {
+            name: overrides.name !== undefined ? overrides.name : customerName,
+            phone: overrides.phone !== undefined ? overrides.phone : customerPhone,
+            address: overrides.address !== undefined ? overrides.address : deliveryAddress,
+            landmark: overrides.landmark !== undefined ? overrides.landmark : landmark,
+            zone: overrides.zone !== undefined ? overrides.zone : deliveryZone,
+            coords: overrides.coords !== undefined ? overrides.coords : gpsCoords,
+            mapsUrl: overrides.mapsUrl !== undefined ? overrides.mapsUrl : googleMapsUrl,
+            userId: userId,
+          };
+          localStorage.setItem("wefsa_profile", JSON.stringify(profile));
+        } catch (e) {
+          console.warn("Storage save error", e);
+        }
+      };
+
+      const showToast = (msg) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 3000);
+      };
+
+      // --- ROBUST GPS DETECTION WITH DISTANCE + NORMALIZED KEYWORD MATCHER ---
+      const handleDetectGPS = () => {
+        if (!navigator.geolocation) {
+          showToast("Geolocation is not supported on this browser.");
+          return;
+        }
+
+        setIsDetectingLocation(true);
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const link = `https://maps.google.com/?q=${lat},${lng}`;
+            setGpsCoords({ lat, lng });
+            setGoogleMapsUrl(link);
+
+            // Calculate exact geodesic distance from Law Gate center and AGI center
+            const distToLawgate = calculateDistanceKm(lat, lng, LAWGATE_COORDS.lat, LAWGATE_COORDS.lng);
+            const distToAgi = calculateDistanceKm(lat, lng, AGI_COORDS.lat, AGI_COORDS.lng);
+
+            let detectedZone = "outside";
+            let formattedAddress = `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            let rawAddressText = "";
+
+            try {
+              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+              if (res.ok) {
+                const data = await res.json();
+                formattedAddress = data.display_name || formattedAddress;
+                rawAddressText = (data.display_name || "").toLowerCase();
+              }
+            } catch (err) {
+              console.warn("Reverse geocode fallback", err);
+            }
+
+            // Clean string removing spaces and punctuation to prevent "law gate" vs "lawgate" mismatch
+            const normalizedText = rawAddressText.replace(/[\s\-_,.]+/g, "");
+
+            // 1. Check AGI Sector (by text or distance < 2.5 km)
+            const isAgiMatch =
+              rawAddressText.includes("agi") ||
+              rawAddressText.includes("sky villas") ||
+              rawAddressText.includes("skyvilla") ||
+              rawAddressText.includes("smart homes") ||
+              rawAddressText.includes("smarthomes") ||
+              distToAgi < 2.5;
+
+            // 2. Check Law Gate & Greenvalley
+            // Matches "Law gate", "Lawgate", "Green Valley", "Greenvalley", "Maheru", "Chaheru", "LPU"
+            // OR if customer's actual GPS location is within 3.0 km of Law Gate!
+            const isLawgateMatch =
+              rawAddressText.includes("law gate") ||
+              rawAddressText.includes("lawgate") ||
+              normalizedText.includes("lawgate") ||
+              rawAddressText.includes("green valley") ||
+              rawAddressText.includes("greenvalley") ||
+              normalizedText.includes("greenvalley") ||
+              rawAddressText.includes("maheru") ||
+              rawAddressText.includes("meheru") ||
+              rawAddressText.includes("chaheru") ||
+              rawAddressText.includes("lpu") ||
+              rawAddressText.includes("lovely professional") ||
+              distToLawgate <= 3.0;
+
+            if (isAgiMatch) {
+              detectedZone = "agi";
+            } else if (isLawgateMatch) {
+              detectedZone = "lawgate";
+            } else {
+              detectedZone = "outside";
+            }
+
+            setDeliveryAddress(formattedAddress);
+            setDeliveryZone(detectedZone);
+            saveProfileLocally({ address: formattedAddress, coords: { lat, lng }, mapsUrl: link, zone: detectedZone });
+            setIsDetectingLocation(false);
+
+            const zoneName = detectedZone === "lawgate"
+              ? "Lawgate & Greenvalley (Local Base)"
+              : detectedZone === "agi"
+              ? "AGI Sector"
+              : "Outside Lawgate & Greenvalley";
+              
+            showToast(`📍 GPS Pinned: ${zoneName}`);
+          },
+          (err) => {
+            setIsDetectingLocation(false);
+            showToast("Could not access GPS. Please type address manually.");
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        );
+      };
+
+      const filteredItems = useMemo(() => {
+        return MENU_ITEMS.filter((item) => {
+          const matchCat = selectedCategory === "all" || item.category === selectedCategory;
+          let matchDiet = true;
+          if (dietFilter === "veg") matchDiet = item.type === "veg";
+          if (dietFilter === "non-veg") matchDiet = item.type === "non-veg" || item.type === "egg";
+          if (dietFilter === "star") matchDiet = item.isStar || item.isMustTry;
+
+          const matchSearch =
+            item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+          return matchCat && matchDiet && matchSearch;
+        });
+      }, [selectedCategory, dietFilter, searchQuery]);
+
+      const subtotal = useMemo(() => {
+        return cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+      }, [cart]);
+
+      const activeZone = useMemo(() => {
+        return DELIVERY_ZONES.find((z) => z.id === deliveryZone) || DELIVERY_ZONES[0];
+      }, [deliveryZone]);
+
+      const deliveryFee = useMemo(() => {
+        if (orderType === "dinein" || subtotal === 0) return 0;
+        if (activeZone.flatFee !== null) return activeZone.flatFee;
+        if (subtotal >= activeZone.freeThreshold) return 0;
+        return activeZone.belowThresholdFee;
+      }, [subtotal, orderType, activeZone]);
+
+      const grandTotal = subtotal + deliveryFee;
+      const totalItemsCount = useMemo(() => cart.reduce((count, item) => count + item.quantity, 0), [cart]);
+
+      const handleOpenCustomizer = (item) => {
+        if (item.isPizza) {
+          setCustomizingItem({
+            ...item,
+            selectedSize: "R",
+            selectedCrust: PIZZA_CRUST_OPTIONS[0],
+            selectedExtraCheese: false,
+            selectedAddons: [],
+            note: "",
+            quantity: 1,
+          });
+        } else {
+          setCustomizingItem({
+            ...item,
+            selectedSize: null,
+            selectedCrust: null,
+            selectedExtraCheese: false,
+            selectedAddons: [],
+            note: "",
+            quantity: 1,
+          });
+        }
+      };
+
+      const getModalUnitPrice = () => {
+        if (!customizingItem) return 0;
+        let base = customizingItem.isPizza
+          ? (customizingItem.prices[customizingItem.selectedSize] || 0)
+          : (customizingItem.prices.default || 0);
+
+        const crustPrice = customizingItem.selectedCrust ? customizingItem.selectedCrust.price : 0;
+        const extraCheesePrice = customizingItem.selectedExtraCheese
+          ? getExtraCheesePriceForSize(customizingItem.selectedSize)
+          : 0;
+
+        const addonsPrice = (customizingItem.selectedAddons || []).reduce((acc, a) => acc + a.price, 0);
+        return base + crustPrice + extraCheesePrice + addonsPrice;
+      };
+
+      const handleAddCustomizedToCart = () => {
+        if (!customizingItem) return;
+        const unitPrice = getModalUnitPrice();
+        const cartItemId = `${customizingItem.id}-${customizingItem.selectedSize || "std"}-${
+          customizingItem.selectedCrust ? customizingItem.selectedCrust.id : "none"
+        }-${customizingItem.selectedExtraCheese ? "xc" : "no-xc"}-${customizingItem.selectedAddons.map(a => a.id).sort().join("_")}-${encodeURIComponent(customizingItem.note || "")}`;
+
+        const existingIdx = cart.findIndex((i) => i.cartItemId === cartItemId);
+        if (existingIdx > -1) {
+          const updated = [...cart];
+          updated[existingIdx].quantity += customizingItem.quantity;
+          setCart(updated);
+        } else {
+          setCart([
+            ...cart,
+            {
+              cartItemId,
+              name: customizingItem.name,
+              isPizza: customizingItem.isPizza,
+              type: customizingItem.type,
+              selectedSize: customizingItem.selectedSize,
+              selectedCrust: customizingItem.selectedCrust,
+              selectedExtraCheese: customizingItem.selectedExtraCheese,
+              selectedAddons: customizingItem.selectedAddons,
+              note: customizingItem.note,
+              unitPrice: unitPrice,
+              quantity: customizingItem.quantity,
+            },
+          ]);
+        }
+        showToast(`Added ${customizingItem.name} to cart`);
+        setCustomizingItem(null);
+      };
+
+      const handleQuickAdd = (item) => {
+        if (item.isPizza) {
+          handleOpenCustomizer(item);
+          return;
+        }
+        const cartItemId = `${item.id}-quick`;
+        const existingIdx = cart.findIndex((i) => i.cartItemId === cartItemId);
+        if (existingIdx > -1) {
+          const updated = [...cart];
+          updated[existingIdx].quantity += 1;
+          setCart(updated);
+        } else {
+          setCart([
+            ...cart,
+            {
+              cartItemId,
+              name: item.name,
+              isPizza: false,
+              type: item.type,
+              selectedSize: null,
+              selectedCrust: null,
+              selectedExtraCheese: false,
+              selectedAddons: [],
+              note: "",
+              unitPrice: item.prices.default,
+              quantity: 1,
+            },
+          ]);
+        }
+        showToast(`Added ${item.name}`);
+      };
+
+      const updateCartItemQuantity = (cartItemId, delta) => {
+        setCart(prev =>
+          prev
+            .map(item => {
+              if (item.cartItemId === cartItemId) {
+                const newQty = item.quantity + delta;
+                return newQty > 0 ? { ...item, quantity: newQty } : null;
+              }
+              return item;
+            })
+            .filter(Boolean)
+        );
+      };
+
+      const handleDispatchWhatsAppOrder = () => {
+        const errors = {};
+        if (!customerName.trim()) errors.name = "Name is required";
+        if (!customerPhone.trim() || customerPhone.trim().length < 8) errors.phone = "Valid phone is required";
+        if (orderType === "delivery" && !deliveryAddress.trim()) errors.address = "Address is required for delivery";
+
+        if (Object.keys(errors).length > 0) {
+          setFormErrors(errors);
+          showToast("Please fill in required customer details.");
+          return;
+        }
+        setFormErrors({});
+        saveProfileLocally();
+
+        const newOrderRecord = {
+          orderId: "WF-" + Math.floor(100000 + Math.random() * 900000),
+          createdAt: new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+          items: [...cart],
+          grandTotal: grandTotal,
+          deliveryZone: activeZone.name,
+          orderType: orderType,
+        };
+
+        const updatedHistory = [newOrderRecord, ...orderHistory];
+        setOrderHistory(updatedHistory);
+        try {
+          localStorage.setItem("wefsa_order_history", JSON.stringify(updatedHistory));
+        } catch (e) {}
+
+        let msg = `*NEW ORDER — ${STORE_CONFIG.name.toUpperCase()}*\n`;
+        msg += `Order ID: ${newOrderRecord.orderId}\n`;
+        msg += `--------------------------------\n`;
+        msg += `Customer: ${customerName.trim()}\n`;
+        msg += `Contact: ${customerPhone.trim()}\n`;
+        msg += `Fulfillment: ${orderType === "delivery" ? "Home Delivery" : "Takeaway / Dine-In"}\n`;
+
+        if (orderType === "delivery") {
+          msg += `Delivery Zone: ${activeZone.name}\n`;
+          msg += `Address: ${deliveryAddress.trim()}\n`;
+          if (landmark.trim()) msg += `Landmark: ${landmark.trim()}\n`;
+          if (googleMapsUrl) msg += `Live GPS Pin: ${googleMapsUrl}\n`;
+        } else {
+          msg += `Pickup Note / Table: ${deliveryAddress.trim() || "Dine-in at Restaurant"}\n`;
+        }
+
+        if (specialInstructions.trim()) {
+          msg += `Kitchen Note: "${specialInstructions.trim()}"\n`;
+        }
+        msg += `--------------------------------\n`;
+        msg += `*ORDER ITEMS:*\n\n`;
+
+        cart.forEach((item, index) => {
+          const sz = item.selectedSize ? ` (${item.selectedSize === "R" ? "Regular" : item.selectedSize === "M" ? "Medium" : "Large"})` : "";
+          msg += `${index + 1}. *${item.name}*${sz} x ${item.quantity} = ₹${item.unitPrice * item.quantity}\n`;
+          if (item.selectedCrust && item.selectedCrust.id !== "standard") {
+            msg += `   • Crust: ${item.selectedCrust.name} (+₹${item.selectedCrust.price})\n`;
+          }
+          if (item.selectedExtraCheese) {
+            msg += `   • Extra Cheese (+₹${getExtraCheesePriceForSize(item.selectedSize)})\n`;
+          }
+          if (item.selectedAddons && item.selectedAddons.length > 0) {
+            item.selectedAddons.forEach(a => {
+              msg += `   • Addon: ${a.name} (+₹${a.price})\n`;
+            });
+          }
+          if (item.note) msg += `   • Note: ${item.note}\n`;
+          msg += `\n`;
+        });
+
+        msg += `--------------------------------\n`;
+        msg += `Item Total: ₹${subtotal}\n`;
+        msg += `Delivery Charge (${activeZone.name}): ${deliveryFee === 0 ? "FREE" : "₹" + deliveryFee}\n`;
+        msg += `*GRAND TOTAL: ₹${grandTotal}*\n`;
+        msg += `--------------------------------\n`;
+        msg += `Wefsa Pizzeria — ${STORE_CONFIG.location}\n`;
+        msg += `Operating Hours: ${STORE_CONFIG.hours}\n`;
+
+        const encoded = encodeURIComponent(msg);
+        window.open(`https://wa.me/${STORE_CONFIG.whatsappNumber}?text=${encoded}`, "_blank");
+      };
+
+      const handleSubmitFeedback = (e) => {
+        e.preventDefault();
+        const entry = {
+          id: Date.now().toString(),
+          name: customerName || "Guest Diner",
+          rating: feedbackRating,
+          category: feedbackCategory,
+          comment: feedbackComment,
+          date: "Just now",
+        };
+        const updated = [entry, ...feedbacksList];
+        setFeedbacksList(updated);
+        try {
+          localStorage.setItem("wefsa_feedbacks", JSON.stringify(updated));
+        } catch (err) {}
+        setFeedbackComment("");
+        setIsFeedbackOpen(false);
+        showToast("Thank you for your review!");
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
+          
+          {toastMessage && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-zinc-800 text-amber-400 font-medium px-4 py-2 rounded-full shadow-2xl border border-zinc-700 text-xs flex items-center gap-2">
+              <span>{toastMessage}</span>
+            </div>
+          )}
+
+          <div className="bg-zinc-950 border-b border-zinc-800/80 px-4 py-1.5 text-[11px] text-zinc-400 flex items-center justify-between">
+            <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-zinc-300 font-semibold">KITCHEN OPEN</span>
+                <span className="text-zinc-600">•</span>
+                <span>{STORE_CONFIG.hours}</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-4 text-zinc-400 font-mono">
+                <span>Direct WhatsApp: {STORE_CONFIG.phoneDisplay}</span>
+                <span className="text-zinc-700">|</span>
+                <span>User: #{userId.substring(0, 8)}</span>
+              </div>
+            </div>
+          </div>
+
+          <header className="sticky top-0 z-30 bg-[#09090b]/90 backdrop-blur-md border-b border-zinc-800/80">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+              
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/30 flex items-center justify-center font-mono font-bold text-amber-400 text-lg">
+                  W
+                </div>
+                <div>
+                  <h1 className="text-lg font-black tracking-tight text-white leading-none">
+                    WEFSA <span className="text-amber-400 font-normal font-mono text-sm">PIZZERIA</span>
+                  </h1>
+                  <p className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                    <span>Near T-Point, Lawgate</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  onClick={() => setIsLocationModalOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-xs transition"
+                >
+                  <div className="text-left hidden md:block">
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Delivering to</div>
+                    <div className="font-semibold text-zinc-200 truncate max-w-[130px]">
+                      {deliveryAddress ? deliveryAddress : activeZone.name}
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-amber-400 font-medium">Change</span>
+                </button>
+
+                <button
+                  onClick={() => setIsOrderHistoryOpen(true)}
+                  className="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-xs font-medium text-zinc-300 transition"
+                  title="View order history"
+                >
+                  <span className="hidden sm:inline">History</span>
+                  <span className="sm:hidden text-xs">🕒</span>
+                </button>
+
+                <button
+                  onClick={() => setIsCartOpen(true)}
+                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs shadow-lg shadow-amber-500/10 transition active:scale-95"
+                >
+                  <span>Cart</span>
+                  {totalItemsCount > 0 && (
+                    <span className="bg-zinc-950 text-amber-400 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                      {totalItemsCount}
+                    </span>
+                  )}
+                  {subtotal > 0 && (
+                    <span className="font-mono font-extrabold border-l border-zinc-900/30 pl-2">
+                      ₹{grandTotal}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="border-b border-zinc-800/80 bg-zinc-900/40">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-zinc-800 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider border border-zinc-700">
+                  {activeZone.name}
+                </span>
+                <span className="text-zinc-300">
+                  {activeZone.id === "agi"
+                    ? "Flat standard delivery ₹100 applies to all orders"
+                    : subtotal >= activeZone.freeThreshold
+                    ? "🎉 FREE delivery unlocked for this order!"
+                    : `Add ₹${activeZone.freeThreshold - subtotal} more for FREE delivery`}
+                </span>
+              </div>
+              <button
+                onClick={() => setIsFeedbackOpen(true)}
+                className="text-zinc-400 hover:text-amber-400 text-[11px] underline underline-offset-4"
+              >
+                Customer Reviews & Feedback ({feedbacksList.length})
+              </button>
+            </div>
+          </div>
+
+          <div className="sticky top-[57px] z-20 bg-[#09090b]/95 backdrop-blur-md border-b border-zinc-800/80 py-3 shadow-md">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search pizzas, burgers, rolls, ingredients..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-amber-500 transition"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white text-xs font-mono"
+                    >
+                      CLEAR
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                  <button
+                    onClick={() => setDietFilter("all")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                      dietFilter === "all" ? "bg-zinc-200 text-zinc-950 font-bold" : "bg-zinc-900 text-zinc-400 border border-zinc-800"
+                    }`}
+                  >
+                    All Items
+                  </button>
+                  <button
+                    onClick={() => setDietFilter("veg")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition ${
+                      dietFilter === "veg" ? "bg-emerald-500 text-zinc-950 font-bold" : "bg-zinc-900 text-zinc-400 border border-zinc-800"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Veg Only
+                  </button>
+                  <button
+                    onClick={() => setDietFilter("non-veg")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition ${
+                      dietFilter === "non-veg" ? "bg-rose-500 text-white font-bold" : "bg-zinc-900 text-zinc-400 border border-zinc-800"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                    Non-Veg
+                  </button>
+                  <button
+                    onClick={() => setDietFilter("star")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                      dietFilter === "star" ? "bg-amber-500 text-zinc-950 font-bold" : "bg-zinc-900 text-zinc-400 border border-zinc-800"
+                    }`}
+                  >
+                    Chef Special & Must Try
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {CATEGORIES.map((cat) => {
+                  const isActive = selectedCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                        isActive
+                          ? "bg-amber-500 text-zinc-950 shadow-sm"
+                          : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-zinc-300 uppercase tracking-wider font-mono">
+                {CATEGORIES.find(c => c.id === selectedCategory)?.label || "Menu"}
+              </h2>
+              <span className="text-xs font-mono text-zinc-500">{filteredItems.length} items</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+              {filteredItems.map((item) => {
+                const isPizza = item.isPizza;
+                const startingPrice = isPizza ? item.prices.R : item.prices.default;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 rounded-xl p-4 flex flex-col justify-between transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <DietaryBadge type={item.type} />
+                          {item.isStar && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                              Chef Special
+                            </span>
+                          )}
+                          {item.isMustTry && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                              MUST TRY
+                            </span>
+                          )}
+                        </div>
+                        {isPizza && (
+                          <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded">
+                            R / M / L
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 className="font-bold text-sm text-zinc-100 group-hover:text-amber-400 transition">
+                        {item.name}
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed line-clamp-2">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] uppercase font-mono text-zinc-500 font-semibold">
+                          {isPizza ? "From" : "Price"}
+                        </div>
+                        <div className="text-base font-bold font-mono text-zinc-100">
+                          ₹{startingPrice}
+                        </div>
+                      </div>
+
+                      {isPizza ? (
+                        <button
+                          onClick={() => handleOpenCustomizer(item)}
+                          className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold transition active:scale-95"
+                        >
+                          Select & Add-ons
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenCustomizer(item)}
+                            className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold border border-zinc-700 transition"
+                          >
+                            Dips
+                          </button>
+                          <button
+                            onClick={() => handleQuickAdd(item)}
+                            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold transition active:scale-95"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </main>
+
+          {customizingItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="bg-[#111216] border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl animate-modal-in overflow-hidden">
+                
+                <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/60">
+                  <div className="flex items-center gap-2">
+                    <DietaryBadge type={customizingItem.type} />
+                    <h3 className="font-bold text-base text-zinc-100">{customizingItem.name}</h3>
+                  </div>
+                  <button
+                    onClick={() => setCustomizingItem(null)}
+                    className="text-zinc-400 hover:text-white p-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-5 overflow-y-auto space-y-5 text-xs">
+                  
+                  {customizingItem.isPizza && (
+                    <div>
+                      <div className="font-bold text-zinc-300 uppercase tracking-wider font-mono mb-2 flex items-center justify-between">
+                        <span>1. Choose Pizza Size</span>
+                        <span className="text-amber-400 font-normal">Required</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { key: "R", label: "Regular 7\"", desc: "Single Serve" },
+                          { key: "M", label: "Medium 9\"", desc: "Serves 2" },
+                          { key: "L", label: "Large 12\"", desc: "Serves 3-4" }
+                        ].map((sz) => {
+                          const isSelected = customizingItem.selectedSize === sz.key;
+                          const price = customizingItem.prices[sz.key];
+                          return (
+                            <button
+                              key={sz.key}
+                              onClick={() => {
+                                let newCrust = customizingItem.selectedCrust;
+                                if (price < CHEESE_BURST_MIN_PRICE && newCrust && newCrust.id !== "standard") {
+                                  newCrust = PIZZA_CRUST_OPTIONS[0];
+                                }
+                                setCustomizingItem({
+                                  ...customizingItem,
+                                  selectedSize: sz.key,
+                                  selectedCrust: newCrust
+                                });
+                              }}
+                              className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition ${
+                                isSelected
+                                  ? "bg-amber-500/10 border-amber-500 text-white"
+                                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                              }`}
+                            >
+                              <div>
+                                <div className="font-bold text-xs">{sz.label}</div>
+                                <div className="text-[10px] text-zinc-500">{sz.desc}</div>
+                              </div>
+                              <div className="mt-2 font-mono font-bold text-amber-400">₹{price}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {customizingItem.isPizza && (
+                    <div>
+                      <div className="font-bold text-zinc-300 uppercase tracking-wider font-mono mb-2">
+                        2. Crust Style
+                      </div>
+                      <div className="space-y-2">
+                        {PIZZA_CRUST_OPTIONS.map((crust) => {
+                          const basePrice = customizingItem.prices[customizingItem.selectedSize] || 0;
+                          const isLocked = crust.id !== "standard" && basePrice < CHEESE_BURST_MIN_PRICE;
+                          const isSelected = customizingItem.selectedCrust?.id === crust.id;
+
+                          return (
+                            <div
+                              key={crust.id}
+                              onClick={() => {
+                                if (isLocked) {
+                                  showToast(`Cheese Burst requires pizza worth ₹${CHEESE_BURST_MIN_PRICE}+. Select Large or a higher tier.`);
+                                  return;
+                                }
+                                setCustomizingItem({ ...customizingItem, selectedCrust: crust });
+                              }}
+                              className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                                isLocked
+                                  ? "opacity-50 bg-zinc-950 border-zinc-900 cursor-not-allowed"
+                                  : isSelected
+                                  ? "bg-amber-500/10 border-amber-500 text-white"
+                                  : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
+                              }`}
+                            >
+                              <div>
+                                <div className="font-semibold text-zinc-200">{crust.name}</div>
+                                <div className="text-[11px] text-zinc-400">{crust.description}</div>
+                                {isLocked && (
+                                  <div className="text-[10px] text-amber-500 font-semibold mt-0.5">
+                                    Requires pizza price ₹{CHEESE_BURST_MIN_PRICE}+
+                                  </div>
+                                )}
+                              </div>
+                              <div className="font-mono font-bold text-amber-400 shrink-0">
+                                {crust.price === 0 ? "Included" : `+₹${crust.price}`}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="font-bold text-zinc-300 uppercase tracking-wider font-mono mb-2">
+                      {customizingItem.isPizza ? "3. Extra Cheese & Add-ons" : "Add Dips & Seasoning"}
+                    </div>
+                    <div className="space-y-2">
+                      {customizingItem.isPizza && (
+                        <label
+                          onClick={() => setCustomizingItem({ ...customizingItem, selectedExtraCheese: !customizingItem.selectedExtraCheese })}
+                          className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                            customizingItem.selectedExtraCheese
+                              ? "bg-amber-500/10 border-amber-500 text-white"
+                              : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={customizingItem.selectedExtraCheese}
+                              onChange={() => {}}
+                              className="accent-amber-500 rounded"
+                            />
+                            <div>
+                              <div className="font-semibold text-zinc-200">Extra Mozzarella Cheese</div>
+                              <div className="text-[10px] text-zinc-400">
+                                {customizingItem.selectedSize === "L" ? "Large (+₹120)" : customizingItem.selectedSize === "M" ? "Medium (+₹90)" : "Regular (+₹60)"}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="font-mono font-bold text-amber-400">
+                            +₹{getExtraCheesePriceForSize(customizingItem.selectedSize)}
+                          </span>
+                        </label>
+                      )}
+
+                      {GENERAL_ADDONS.map((addon) => {
+                        const isChecked = (customizingItem.selectedAddons || []).some(a => a.id === addon.id);
+                        return (
+                          <label
+                            key={addon.id}
+                            onClick={() => {
+                              const updated = isChecked
+                                ? customizingItem.selectedAddons.filter(a => a.id !== addon.id)
+                                : [...(customizingItem.selectedAddons || []), addon];
+                              setCustomizingItem({ ...customizingItem, selectedAddons: updated });
+                            }}
+                            className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                              isChecked
+                                ? "bg-amber-500/10 border-amber-500 text-white"
+                                : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                className="accent-amber-500 rounded"
+                              />
+                              <span className="font-semibold text-zinc-200">{addon.name}</span>
+                            </div>
+                            <span className="font-mono font-bold text-amber-400">
+                              {addon.price === 0 ? "FREE" : `+₹${addon.price}`}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-zinc-300 uppercase tracking-wider font-mono mb-1">
+                      Kitchen Note
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g., Well-baked crisp crust, less chili flakes..."
+                      value={customizingItem.note || ""}
+                      onChange={(e) => setCustomizingItem({ ...customizingItem, note: e.target.value })}
+                      className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between gap-3">
+                  <div className="flex items-center border border-zinc-700 rounded-lg bg-zinc-800">
+                    <button
+                      onClick={() => setCustomizingItem({ ...customizingItem, quantity: Math.max(1, customizingItem.quantity - 1) })}
+                      className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white"
+                    >
+                      -
+                    </button>
+                    <span className="w-8 text-center font-mono font-bold">{customizingItem.quantity}</span>
+                    <button
+                      onClick={() => setCustomizingItem({ ...customizingItem, quantity: customizingItem.quantity + 1 })}
+                      className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleAddCustomizedToCart}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold flex items-center justify-between shadow-lg transition active:scale-95"
+                  >
+                    <span>Add to Order</span>
+                    <span className="font-mono text-sm font-extrabold">
+                      ₹{getModalUnitPrice() * customizingItem.quantity}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isCartOpen && (
+            <div className="fixed inset-0 z-50 overflow-hidden">
+              <div onClick={() => setIsCartOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+              <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+                <div className="w-screen max-w-md bg-[#111216] border-l border-zinc-800 text-white shadow-2xl flex flex-col">
+                  
+                  <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/60">
+                    <div>
+                      <h3 className="font-bold text-base text-zinc-100">Your Basket</h3>
+                      <p className="text-[11px] text-zinc-400">{totalItemsCount} items selected</p>
+                    </div>
+                    <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 hover:text-white p-1">
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-800 text-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-zinc-400">Zone: </span>
+                      <strong className="text-zinc-200">{activeZone.name}</strong>
+                    </div>
+                    <button
+                      onClick={() => setIsLocationModalOpen(true)}
+                      className="text-amber-400 hover:underline font-semibold text-[11px]"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3.5 divide-y divide-zinc-800/80">
+                    {cart.length === 0 ? (
+                      <div className="text-center py-20 text-zinc-500 text-xs">
+                        <div className="text-3xl mb-2">🛒</div>
+                        <p>Your basket is currently empty.</p>
+                      </div>
+                    ) : (
+                      cart.map((item) => (
+                        <div key={item.cartItemId} className="pt-3.5 first:pt-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <DietaryBadge type={item.type} />
+                                <h4 className="font-semibold text-xs text-zinc-200">{item.name}</h4>
+                              </div>
+                              <div className="text-[11px] text-zinc-400 mt-0.5 space-y-0.5 pl-4">
+                                {item.selectedSize && <div>Size: <span className="text-amber-400 font-semibold">{item.selectedSize === "R" ? "Regular" : item.selectedSize === "M" ? "Medium" : "Large"}</span></div>}
+                                {item.selectedCrust && item.selectedCrust.id !== "standard" && <div>Crust: {item.selectedCrust.name} (+₹{item.selectedCrust.price})</div>}
+                                {item.selectedExtraCheese && <div>Extra Mozzarella (+₹{getExtraCheesePriceForSize(item.selectedSize)})</div>}
+                                {item.selectedAddons && item.selectedAddons.length > 0 && <div>Add-ons: {item.selectedAddons.map(a => a.name).join(", ")}</div>}
+                                {item.note && <div className="italic text-zinc-500">"{item.note}"</div>}
+                              </div>
+                            </div>
+                            <span className="font-mono font-bold text-xs text-zinc-200">
+                              ₹{item.unitPrice * item.quantity}
+                            </span>
+                          </div>
+
+                          <div className="mt-2.5 flex items-center justify-between pl-4">
+                            <button
+                              onClick={() => updateCartItemQuantity(item.cartItemId, -item.quantity)}
+                              className="text-[11px] text-rose-400/80 hover:text-rose-400"
+                            >
+                              Remove
+                            </button>
+                            <div className="flex items-center border border-zinc-700 rounded bg-zinc-800">
+                              <button onClick={() => updateCartItemQuantity(item.cartItemId, -1)} className="w-6 h-6 text-zinc-400 hover:text-white">-</button>
+                              <span className="w-6 text-center font-mono text-xs">{item.quantity}</span>
+                              <button onClick={() => updateCartItemQuantity(item.cartItemId, 1)} className="w-6 h-6 text-zinc-400 hover:text-white">+</button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+
+                    {cart.length > 0 && (
+                      <div className="pt-5 space-y-3">
+                        <div className="font-mono font-bold text-xs text-amber-400 uppercase tracking-wider">
+                          Customer & Delivery Details
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 bg-zinc-900 p-1 rounded-xl border border-zinc-800">
+                          <button
+                            onClick={() => setOrderType("delivery")}
+                            className={`py-1.5 rounded-lg text-xs font-bold transition ${orderType === "delivery" ? "bg-amber-500 text-zinc-950" : "text-zinc-400"}`}
+                          >
+                            Delivery
+                          </button>
+                          <button
+                            onClick={() => setOrderType("dinein")}
+                            className={`py-1.5 rounded-lg text-xs font-bold transition ${orderType === "dinein" ? "bg-amber-500 text-zinc-950" : "text-zinc-400"}`}
+                          >
+                            Takeaway / Dine-In
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 text-xs">
+                          <div>
+                            <label className="text-[11px] text-zinc-400 block mb-0.5">Your Name *</label>
+                            <input
+                              type="text"
+                              placeholder="e.g., Rohit Verma"
+                              value={customerName}
+                              onChange={(e) => setCustomerName(e.target.value)}
+                              className={`w-full px-3 py-2 rounded-lg bg-zinc-900 border text-white text-xs ${formErrors.name ? "border-rose-500" : "border-zinc-800"}`}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] text-zinc-400 block mb-0.5">WhatsApp Mobile *</label>
+                            <input
+                              type="tel"
+                              placeholder="e.g., 9876543210"
+                              value={customerPhone}
+                              onChange={(e) => setCustomerPhone(e.target.value)}
+                              className={`w-full px-3 py-2 rounded-lg bg-zinc-900 border text-white text-xs ${formErrors.phone ? "border-rose-500" : "border-zinc-800"}`}
+                            />
+                          </div>
+
+                          {orderType === "delivery" && (
+                            <div>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <label className="text-[11px] text-zinc-400">Address / Flat / PG *</label>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsLocationModalOpen(true)}
+                                  className="text-[10px] text-amber-400 hover:underline"
+                                >
+                                  Use GPS Pin
+                                </button>
+                              </div>
+                              <textarea
+                                rows={2}
+                                placeholder="e.g., Room 204, Green PG, near Lawgate"
+                                value={deliveryAddress}
+                                onChange={(e) => setDeliveryAddress(e.target.value)}
+                                className={`w-full px-3 py-2 rounded-lg bg-zinc-900 border text-white text-xs ${formErrors.address ? "border-rose-500" : "border-zinc-800"}`}
+                              />
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="text-[11px] text-zinc-400 block mb-0.5">Delivery Instruction</label>
+                            <input
+                              type="text"
+                              placeholder="e.g., Call at hostel gate, send extra ketchup"
+                              value={specialInstructions}
+                              onChange={(e) => setSpecialInstructions(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {cart.length > 0 && (
+                    <div className="p-4 bg-zinc-900 border-t border-zinc-800 space-y-3">
+                      <div className="space-y-1 text-xs text-zinc-300">
+                        <div className="flex justify-between">
+                          <span>Subtotal</span>
+                          <span className="font-mono">₹{subtotal}</span>
+                        </div>
+                        {orderType === "delivery" && (
+                          <div className="flex justify-between">
+                            <span>Delivery Fee ({activeZone.name})</span>
+                            <span className="font-mono">{deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`}</span>
+                          </div>
+                        )}
+                        <div className="pt-2 border-t border-zinc-800 flex justify-between font-bold text-sm text-white">
+                          <span>Total</span>
+                          <span className="font-mono text-amber-400">₹{grandTotal}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleDispatchWhatsAppOrder}
+                        className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-95"
+                      >
+                        <span>Send Order via WhatsApp</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isLocationModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="bg-[#111216] border border-zinc-800 rounded-2xl w-full max-w-md p-5 shadow-2xl animate-modal-in space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                  <div>
+                    <h3 className="font-bold text-sm text-zinc-100">Set Delivery Location</h3>
+                    <p className="text-[11px] text-zinc-400">Saved for all future orders</p>
+                  </div>
+                  <button onClick={() => setIsLocationModalOpen(false)} className="text-zinc-400 hover:text-white">✕</button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs text-zinc-200">Auto-Detect GPS</div>
+                    <div className="text-[11px] text-zinc-400">Creates an exact pin and detects delivery zone</div>
+                  </div>
+                  <button
+                    onClick={handleDetectGPS}
+                    disabled={isDetectingLocation}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs disabled:opacity-50"
+                  >
+                    {isDetectingLocation ? "Locating..." : "Detect"}
+                  </button>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 block mb-2 font-mono">Select Zone</label>
+                  <div className="space-y-1.5">
+                    {DELIVERY_ZONES.map((zone) => (
+                      <div
+                        key={zone.id}
+                        onClick={() => setDeliveryZone(zone.id)}
+                        className={`p-2.5 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${
+                          deliveryZone === zone.id ? "bg-amber-500/10 border-amber-500 text-white" : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                        }`}
+                      >
+                        <div>
+                          <div className="font-semibold text-zinc-200">{zone.name}</div>
+                          <div className="text-[10px] text-zinc-500">{zone.description}</div>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-amber-400">{zone.badge}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 block mb-1">Detailed Address</label>
+                  <textarea
+                    rows={2}
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    placeholder="Hostel, Flat number, Gate instructions..."
+                    className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white text-xs"
+                  />
+                </div>
+
+                <button
+                  onClick={() => {
+                    saveProfileLocally();
+                    setIsLocationModalOpen(false);
+                    showToast("Delivery location updated!");
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-amber-500 text-zinc-950 font-bold text-xs shadow-md"
+                >
+                  Save & Apply
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isOrderHistoryOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="bg-[#111216] border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[85vh] p-5 shadow-2xl animate-modal-in flex flex-col">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                  <div>
+                    <h3 className="font-bold text-sm text-zinc-100">Order History</h3>
+                    <p className="text-[11px] text-zinc-400">Previous orders placed on this device</p>
+                  </div>
+                  <button onClick={() => setIsOrderHistoryOpen(false)} className="text-zinc-400 hover:text-white">✕</button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto py-3 space-y-3">
+                  {orderHistory.length === 0 ? (
+                    <div className="text-center py-12 text-zinc-500 text-xs">No previous orders recorded yet.</div>
+                  ) : (
+                    orderHistory.map((ord, idx) => (
+                      <div key={idx} className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-amber-400">{ord.orderId}</span>
+                          <span className="text-[10px] text-zinc-500">{ord.createdAt}</span>
+                        </div>
+                        <div className="text-zinc-300">
+                          {ord.items.map(i => `${i.name} (x${i.quantity})`).join(", ")}
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
+                          <span className="font-mono font-bold text-zinc-100">₹{ord.grandTotal}</span>
+                          <button
+                            onClick={() => {
+                              setCart(ord.items);
+                              setIsOrderHistoryOpen(false);
+                              setIsCartOpen(true);
+                              showToast("Items re-added to cart!");
+                            }}
+                            className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-semibold text-[11px]"
+                          >
+                            Reorder All
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isFeedbackOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="bg-[#111216] border border-zinc-800 rounded-2xl w-full max-w-md max-h-[90vh] p-5 shadow-2xl animate-modal-in flex flex-col space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                  <div>
+                    <h3 className="font-bold text-sm text-zinc-100">Diner Feedback</h3>
+                    <p className="text-[11px] text-zinc-400">Share your culinary experience</p>
+                  </div>
+                  <button onClick={() => setIsFeedbackOpen(false)} className="text-zinc-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={handleSubmitFeedback} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-[11px] text-zinc-400 block mb-1">Rating</label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          type="button"
+                          key={star}
+                          onClick={() => setFeedbackRating(star)}
+                          className={`w-8 h-8 rounded-lg font-mono font-bold ${
+                            feedbackRating >= star ? "bg-amber-500 text-zinc-950" : "bg-zinc-900 border border-zinc-800 text-zinc-400"
+                          }`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-zinc-400 block mb-1">Category</label>
+                    <select
+                      value={feedbackCategory}
+                      onChange={(e) => setFeedbackCategory(e.target.value)}
+                      className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white text-xs"
+                    >
+                      <option>Taste & Crust Quality</option>
+                      <option>Late Night Delivery Speed</option>
+                      <option>Packaging & Temperature</option>
+                      <option>Overall Satisfaction</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-zinc-400 block mb-1">Your Review</label>
+                    <textarea
+                      rows={3}
+                      required
+                      placeholder="Tell us what you loved or what we can improve..."
+                      value={feedbackComment}
+                      onChange={(e) => setFeedbackComment(e.target.value)}
+                      className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-white text-xs"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs shadow-md"
+                  >
+                    Submit Review
+                  </button>
+                </form>
+
+                <div className="border-t border-zinc-800 pt-3">
+                  <div className="font-mono text-[11px] text-zinc-400 mb-2">Recent Community Reviews</div>
+                  <div className="max-h-36 overflow-y-auto space-y-2 text-xs">
+                    {feedbacksList.length === 0 ? (
+                      <div className="text-zinc-600 text-[11px]">No reviews yet. Be the first!</div>
+                    ) : (
+                      feedbacksList.map((f, i) => (
+                        <div key={i} className="p-2 rounded bg-zinc-900 border border-zinc-800/80">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="font-semibold text-zinc-300">{f.name}</span>
+                            <span className="text-amber-400 font-mono">{"★".repeat(f.rating)}</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 mt-0.5">{f.comment}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer className="bg-zinc-950 border-t border-zinc-800 py-6 px-4 sm:px-6 text-zinc-500 text-xs">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+              <div>
+                <p className="font-semibold text-zinc-300">{STORE_CONFIG.name} — {STORE_CONFIG.location}</p>
+                <p className="text-[11px] mt-0.5">Late Night Pizza Kitchen • 05:00 PM to 04:00 AM</p>
+              </div>
+              <div className="text-[11px] font-mono text-zinc-500">
+                Direct WhatsApp Dispatch • Powered by Modern Web Standards
+              </div>
+            </div>
+          </footer>
+
+          {cart.length > 0 && !isCartOpen && (
+            <div className="fixed bottom-4 inset-x-4 z-40 md:hidden">
+              <button
+                onClick={() => setIsCartOpen(true)}
+                className="w-full bg-amber-500 text-zinc-950 p-3 rounded-xl shadow-2xl flex items-center justify-between font-bold active:scale-95 transition"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="bg-zinc-950 text-amber-400 text-xs px-2 py-0.5 rounded font-mono font-bold">
+                    {totalItemsCount}
+                  </span>
+                  <span className="text-xs">View Basket</span>
+                </div>
+                <div className="font-mono font-black text-sm">
+                  ₹{grandTotal}
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
